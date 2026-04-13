@@ -6,6 +6,7 @@ from pymcdm import weights as w
 from pymcdm.methods import TOPSIS, MABAC, ARAS, WSM
 from pymcdm.helpers import rrankdata
 from pymcdm import visuals
+from pymcdm.normalization import minmax_normalization  # Normalizasyon hatasını çözen import
 
 # Alias SAW to WSM
 SAW = WSM
@@ -20,14 +21,12 @@ uploaded_file = st.sidebar.file_uploader("Upload CSV", type=['csv'])
 if uploaded_file is not None:
     df = pd.read_csv(uploaded_file)
 else:
-    # Default data fallback
+    # Varsayılan veri seti (CSV yoksa)
     data = {
-        'alternative': ['A1', 'A2', 'A3'],
-        'discharge': [2.5, 3.0, 4.0],
-        'cost': [50, 60, 80],
-        'wetlands': [0.9, 0.6, 0.1],
-        'forest': [0.1, 0.6, 0.3],
-        'social acceptance': [0.17, 0.83, 0.50]
+        'Alternative': ['A1', 'A2', 'A3'],
+        'Criterion 1': [2.5, 3.0, 4.0],
+        'Criterion 2': [50, 60, 80],
+        'Criterion 3': [0.9, 0.6, 0.1]
     }
     df = pd.DataFrame(data)
 
@@ -36,10 +35,10 @@ st.markdown("Edit the matrix directly below or upload a new CSV file from the si
 edited_df = st.data_editor(df, num_rows="dynamic", use_container_width=True)
 
 # --- DATA CLEANING & VALIDATION ---
-# Ensure all data columns (excluding the first name column) are numeric
 try:
+    # İlk sütun isimlerini/alternatifleri al
     alts_names = edited_df.iloc[:, 0].astype(str).tolist()
-    # Force numeric conversion and handle potential non-numeric strings
+    # Geri kalan sütunları sayısal veriye çevir
     numeric_df = edited_df.iloc[:, 1:].apply(pd.to_numeric, errors='coerce')
     
     if numeric_df.isnull().values.any():
@@ -68,7 +67,7 @@ for col in criteria_names:
         ctype = st.radio("Type", options=["Benefit", "Cost"], key=f"t_{col}")
         types_list.append(1 if ctype == "Benefit" else -1)
 
-# Normalize weights so they sum to 1
+# Ağırlıkları normalize et (toplamı 1 olmalı)
 weights = np.array(weights_list)
 if np.sum(weights) > 0:
     weights = weights / np.sum(weights)
@@ -79,12 +78,14 @@ types = np.array(types_list)
 
 # --- 3. METHOD SELECTION ---
 st.sidebar.header("3. Select MCDM Methods")
+
+# ÇÖZÜM: SAW ve WSM için minmax_normalization kullanarak 0 değerleri için hatayı engelliyoruz.
 available_methods = {
     'TOPSIS': TOPSIS(),
-    'SAW': SAW(),
+    'SAW': SAW(normalization=minmax_normalization),
     'MABAC': MABAC(),
     'ARAS': ARAS(),
-    'WSM': WSM()
+    'WSM': WSM(normalization=minmax_normalization)
 }
 
 selected_method_names = st.sidebar.multiselect(
@@ -106,13 +107,8 @@ if st.button("Run MCDM Analysis"):
             try:
                 method = available_methods[name]
                 
-                # Pre-check for WSM/SAW: they require positive values for sum-normalization
-                if name in ['WSM', 'SAW'] and (alts_data <= 0).any():
-                    # Add a tiny epsilon to handle zeros if necessary
-                    temp_data = np.where(alts_data <= 0, 1e-9, alts_data)
-                    pref = method(temp_data, weights, types)
-                else:
-                    pref = method(alts_data, weights, types)
+                # Artık epsilon eklemeye gerek yok, minmax_normalization bunu halleder.
+                pref = method(alts_data, weights, types)
                 
                 rank = rrankdata(pref)
                 prefs.append(pref)
@@ -134,7 +130,7 @@ if st.button("Run MCDM Analysis"):
                 rank_df = pd.DataFrame(zip(*ranks), columns=successful_methods, index=alts_names).astype(int)
                 st.dataframe(rank_df, use_container_width=True)
 
-            # Plotting the polar chart
+            # Polar chart görselleştirme
             st.subheader("Polar Ranking Plot")
             fig, ax = plt.subplots(figsize=(7, 7), dpi=150, tight_layout=True, subplot_kw=dict(projection='polar'))
             visuals.polar_plot(ranks, labels=successful_methods, legend_ncol=2, ax=ax)
