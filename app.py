@@ -68,10 +68,10 @@ types = np.array(types_list)
 st.sidebar.header("3. Select MCDM Methods")
 available_methods = {
     'TOPSIS': TOPSIS(),
-    'SAW': SAW(),
+    'SAW': SAW(normalization='minmax'),
     'MABAC': MABAC(),
     'ARAS': ARAS(),
-    'WSM': WSM()
+    'WSM': WSM(normalization='minmax')
 }
 
 selected_method_names = st.sidebar.multiselect(
